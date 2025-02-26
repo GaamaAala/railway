@@ -1,18 +1,39 @@
+import os
+import json
 import requests
 import csv
-import os
-import time
 from datetime import datetime
+from pydrive2.auth import GoogleAuth
+from pydrive2.drive import GoogleDrive
+from io import StringIO
+
+# Load Google Drive credentials from Railway environment variable
+creds_json = os.getenv("GDRIVE_CREDENTIALS")
+if creds_json:
+    creds_path = "/tmp/credentials.json"  # Temp file path
+    with open(creds_path, "w") as f:
+        f.write(creds_json)
+
+    # Authenticate with Google Drive
+    gauth = GoogleAuth()
+    gauth.LoadCredentialsFile(creds_path)
+    if gauth.credentials is None:
+        gauth.LocalWebserverAuth()
+    elif gauth.access_token_expired:
+        gauth.Refresh()
+    else:
+        gauth.Authorize()
+    drive = GoogleDrive(gauth)
+else:
+    print("❌ Google Drive credentials not found!")
 
 # API details
 URL = "https://imgametransit.com/api/webapi/GetNoaverageEmerdList"
 HEADERS = {"Content-Type": "application/json"}
-
-# CSV file path (Railway uses `/app` as the working directory)
-CSV_FILE = os.path.join(os.getcwd(), "data.csv")
+CSV_FILE = "data.csv"
 CSV_HEADERS = ["Period", "Number", "Premium"]
 
-# Function to fetch data
+# Fetch data
 def fetch_data():
     payload = {
         "pageSize": 10,
@@ -23,25 +44,20 @@ def fetch_data():
         "signature": "E3D7840D7D96C459DD2074174CD5A9A5",
         "timestamp": int(datetime.now().timestamp())
     }
-
     response = requests.post(URL, headers=HEADERS, json=payload)
-    
     if response.status_code == 200:
         data = response.json()
-        if "data" in data and "list" in data["data"]:
-            return data["data"]["list"]
-    
+        return data["data"]["list"] if "data" in data and "list" in data["data"] else None
     return None
 
-# Function to check if period already exists in CSV
+# Check existing periods
 def get_existing_periods():
     if not os.path.exists(CSV_FILE):
         return set()
-
     with open(CSV_FILE, "r") as file:
         return {line.split(",")[0] for line in file.readlines()[1:]}
 
-# Function to write data to CSV
+# Write to CSV and upload to Google Drive
 def write_to_csv(items):
     existing_periods = get_existing_periods()
     new_data = []
@@ -50,37 +66,34 @@ def write_to_csv(items):
         period = item["issueNumber"]
         number = item["number"]
         premium = item["premium"]
-        
         if period not in existing_periods:
             new_data.append([period, number, premium])
             print(f"✅ New period added: {period}")
-        else:
-            print(f"⚠️ Duplicate period skipped: {period}")
 
     if new_data:
-        existing_data = []
-        if os.path.exists(CSV_FILE):
-            with open(CSV_FILE, "r") as file:
-                existing_data = file.readlines()
-        
         with open(CSV_FILE, "w", newline="") as file:
             writer = csv.writer(file)
             writer.writerow(CSV_HEADERS)
             writer.writerows(new_data)
-            if existing_data:
-                file.writelines(existing_data[1:])
 
-# Continuous loop for fetching data
+        # Upload to Google Drive
+        upload_to_drive()
+
+# Upload function
+def upload_to_drive():
+    file = drive.CreateFile({'title': CSV_FILE})
+    file.SetContentFile(CSV_FILE)
+    file.Upload()
+    print(f"📤 Uploaded {CSV_FILE} to Google Drive!")
+
+# Main function
 def main():
-    while True:
-        print(f"⏳ Fetching data at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        data = fetch_data()
-        if data:
-            write_to_csv(data)
-        else:
-            print("No new data found.")
-        
-        time.sleep(600)  # Fetch data every 10 min
+    print("Fetching data...")
+    data = fetch_data()
+    if data:
+        write_to_csv(data)
+    else:
+        print("No new data found.")
 
 if __name__ == "__main__":
     main()
