@@ -16,16 +16,12 @@ if creds_json:
 
     # Authenticate with Google Drive
     gauth = GoogleAuth()
-    gauth.LoadCredentialsFile(creds_path)
-    if gauth.credentials is None:
-        gauth.LocalWebserverAuth()
-    elif gauth.access_token_expired:
-        gauth.Refresh()
-    else:
-        gauth.Authorize()
+    gauth.LoadClientConfigFile(creds_path)  # Correct method
+    gauth.CommandLineAuth()  # Use this instead of LocalWebserverAuth()
     drive = GoogleDrive(gauth)
 else:
     print("❌ Google Drive credentials not found!")
+    exit()
 
 # API details
 URL = "https://imgametransit.com/api/webapi/GetNoaverageEmerdList"
@@ -55,15 +51,17 @@ def get_existing_periods():
     if not os.path.exists(CSV_FILE):
         return set()
     with open(CSV_FILE, "r") as file:
-        return {line.split(",")[0] for line in file.readlines()[1:]}
+        reader = csv.reader(file)
+        next(reader, None)  # Skip header
+        return {row[0] for row in reader}
 
-# Write to CSV and upload to Google Drive
+# Write to CSV (append new data)
 def write_to_csv(items):
     existing_periods = get_existing_periods()
     new_data = []
 
     for item in items:
-        period = item["issueNumber"]
+        period = str(item["issueNumber"])  # Ensure period is a string
         number = item["number"]
         premium = item["premium"]
         if period not in existing_periods:
@@ -71,16 +69,24 @@ def write_to_csv(items):
             print(f"✅ New period added: {period}")
 
     if new_data:
-        with open(CSV_FILE, "w", newline="") as file:
+        file_exists = os.path.isfile(CSV_FILE)
+        with open(CSV_FILE, "a", newline="") as file:
             writer = csv.writer(file)
-            writer.writerow(CSV_HEADERS)
+            if not file_exists:
+                writer.writerow(CSV_HEADERS)  # Write headers if file is new
             writer.writerows(new_data)
 
         # Upload to Google Drive
         upload_to_drive()
 
-# Upload function
+# Upload function (delete old file first)
 def upload_to_drive():
+    # Check for existing file with same name
+    file_list = drive.ListFile({'q': f"title='{CSV_FILE}'"}).GetList()
+    for file in file_list:
+        file.Delete()  # Delete existing file
+
+    # Upload new file
     file = drive.CreateFile({'title': CSV_FILE})
     file.SetContentFile(CSV_FILE)
     file.Upload()
