@@ -10,7 +10,7 @@ from oauth2client.service_account import ServiceAccountCredentials
 # Load Google Drive credentials from Railway environment variable
 creds_json = os.getenv("GDRIVE_CREDENTIALS")
 if creds_json:
-    creds_path = "/tmp/credentials.json"  # Temp file path
+    creds_path = "/tmp/credentials.json"
     with open(creds_path, "w") as f:
         f.write(creds_json)
 
@@ -23,7 +23,7 @@ if creds_json:
 else:
     print("❌ Google Drive credentials not found!")
 
-# Hard-coded API URL
+# API details
 URL = "https://imgametransit.com/api/webapi/GetNoaverageEmerdList"
 HEADERS = {"Content-Type": "application/json"}
 CSV_FILE = "data.csv"
@@ -46,14 +46,14 @@ def fetch_data():
         return data["data"]["list"] if "data" in data and "list" in data["data"] else None
     return None
 
-# Check existing periods
+# Read existing periods
 def get_existing_periods():
     if not os.path.exists(CSV_FILE):
         return set()
     with open(CSV_FILE, "r") as file:
         return {line.split(",")[0] for line in file.readlines()[1:]}
 
-# Write to CSV and upload to Google Drive
+# Append new data to CSV
 def write_to_csv(items):
     existing_periods = get_existing_periods()
     new_data = []
@@ -67,15 +67,17 @@ def write_to_csv(items):
             print(f"✅ New period added: {period}")
 
     if new_data:
-        with open(CSV_FILE, "w", newline="") as file:
+        file_exists = os.path.exists(CSV_FILE)
+        with open(CSV_FILE, "a", newline="") as file:
             writer = csv.writer(file)
-            writer.writerow(CSV_HEADERS)
+            if not file_exists:
+                writer.writerow(CSV_HEADERS)
             writer.writerows(new_data)
 
-        # Upload to Google Drive
+        # Upload only if new data is added
         upload_to_drive()
 
-# Upload function
+# Upload CSV to Google Drive
 def upload_to_drive():
     file_list = drive.ListFile({'q': f"title='{CSV_FILE}' and trashed=false"}).GetList()
     if file_list:
@@ -97,4 +99,6 @@ def main():
         print("No new data found.")
 
 if __name__ == "__main__":
-    main()
+    while True:
+        main()
+        time.sleep(600)  # Fetch data every 30 seconds
