@@ -50,17 +50,22 @@ def fetch_data():
 # Read existing periods
 def get_existing_periods():
     if not os.path.exists(CSV_FILE):
-        return set()
-    with open(CSV_FILE, "r") as file:
-        return {line.split(",")[0] for line in file.readlines()[1:]}
+        return set(), []
+    
+    with open(CSV_FILE, "r", newline="", encoding="utf-8") as file:
+        reader = csv.reader(file)
+        next(reader, None)  # Skip header
+        data = list(reader)
+        periods = {row[0] for row in data}
+        return periods, data  # Return both existing periods and data
 
-# Prepend new data to CSV
+# Append new data to CSV (adding at the top)
 def write_to_csv(items):
-    existing_periods = get_existing_periods()
+    existing_periods, existing_data = get_existing_periods()
     new_data = []
 
     for item in items:
-        period = item["issueNumber"]
+        period = str(item["issueNumber"])  # Ensure period is a string (prevent scientific notation)
         number = item["number"]
         premium = item["premium"]
         if period not in existing_periods:
@@ -68,24 +73,13 @@ def write_to_csv(items):
             print(f"✅ New period added: {period}")
 
     if new_data:
-        # Read existing CSV data
-        if os.path.exists(CSV_FILE):
-            with open(CSV_FILE, "r") as file:
-                existing_data = file.readlines()
-        else:
-            existing_data = []
+        # Combine new data on top of existing data
+        all_data = [CSV_HEADERS] + new_data + existing_data
 
-        # Write new data at the top
-        with open(CSV_FILE, "w", newline="") as file:
+        # Write data back to file, ensuring correct format
+        with open(CSV_FILE, "w", newline="", encoding="utf-8") as file:
             writer = csv.writer(file)
-            # Write headers if file is empty
-            if not existing_data:
-                writer.writerow(CSV_HEADERS)
-            # Write the new data first, then the old data
-            for row in new_data:
-                writer.writerow(row)
-            for row in existing_data[1:]:  # Skip header
-                writer.writerow(row)
+            writer.writerows(all_data)
 
         # Upload only if new data is added
         upload_to_drive()
@@ -113,8 +107,6 @@ def main():
         write_to_csv(data)
     else:
         print("No new data found.")
-
-import time
 
 if __name__ == "__main__":
     while True:
