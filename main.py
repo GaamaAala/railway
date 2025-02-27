@@ -5,7 +5,7 @@ import csv
 from datetime import datetime
 from pydrive2.auth import GoogleAuth
 from pydrive2.drive import GoogleDrive
-from io import StringIO
+from oauth2client.service_account import ServiceAccountCredentials
 
 # Load Google Drive credentials from Railway environment variable
 creds_json = os.getenv("GDRIVE_CREDENTIALS")
@@ -14,16 +14,16 @@ if creds_json:
     with open(creds_path, "w") as f:
         f.write(creds_json)
 
-    # Authenticate with Google Drive
+    # Authenticate with Google Drive using service account
+    scope = ["https://www.googleapis.com/auth/drive"]
+    creds = ServiceAccountCredentials.from_json_keyfile_name(creds_path, scope)
     gauth = GoogleAuth()
-    gauth.LoadClientConfigFile(creds_path)  # Correct method
-    gauth.CommandLineAuth()  # Use this instead of LocalWebserverAuth()
+    gauth.credentials = creds
     drive = GoogleDrive(gauth)
 else:
     print("❌ Google Drive credentials not found!")
-    exit()
 
-# API details
+# Hard-coded API URL
 URL = "https://imgametransit.com/api/webapi/GetNoaverageEmerdList"
 HEADERS = {"Content-Type": "application/json"}
 CSV_FILE = "data.csv"
@@ -51,17 +51,15 @@ def get_existing_periods():
     if not os.path.exists(CSV_FILE):
         return set()
     with open(CSV_FILE, "r") as file:
-        reader = csv.reader(file)
-        next(reader, None)  # Skip header
-        return {row[0] for row in reader}
+        return {line.split(",")[0] for line in file.readlines()[1:]}
 
-# Write to CSV (append new data)
+# Write to CSV and upload to Google Drive
 def write_to_csv(items):
     existing_periods = get_existing_periods()
     new_data = []
 
     for item in items:
-        period = str(item["issueNumber"])  # Ensure period is a string
+        period = item["issueNumber"]
         number = item["number"]
         premium = item["premium"]
         if period not in existing_periods:
@@ -69,25 +67,22 @@ def write_to_csv(items):
             print(f"✅ New period added: {period}")
 
     if new_data:
-        file_exists = os.path.isfile(CSV_FILE)
-        with open(CSV_FILE, "a", newline="") as file:
+        with open(CSV_FILE, "w", newline="") as file:
             writer = csv.writer(file)
-            if not file_exists:
-                writer.writerow(CSV_HEADERS)  # Write headers if file is new
+            writer.writerow(CSV_HEADERS)
             writer.writerows(new_data)
 
         # Upload to Google Drive
         upload_to_drive()
 
-# Upload function (delete old file first)
+# Upload function
 def upload_to_drive():
-    # Check for existing file with same name
-    file_list = drive.ListFile({'q': f"title='{CSV_FILE}'"}).GetList()
-    for file in file_list:
-        file.Delete()  # Delete existing file
-
-    # Upload new file
-    file = drive.CreateFile({'title': CSV_FILE})
+    file_list = drive.ListFile({'q': f"title='{CSV_FILE}' and trashed=false"}).GetList()
+    if file_list:
+        file_id = file_list[0]['id']
+        file = drive.CreateFile({'id': file_id})
+    else:
+        file = drive.CreateFile({'title': CSV_FILE})
     file.SetContentFile(CSV_FILE)
     file.Upload()
     print(f"📤 Uploaded {CSV_FILE} to Google Drive!")
