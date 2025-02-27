@@ -1,5 +1,5 @@
-import time
 import os
+import time
 import json
 import requests
 import csv
