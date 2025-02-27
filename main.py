@@ -88,7 +88,11 @@ def upload_to_drive():
         file = drive.CreateFile({'title': CSV_FILE})
     file.SetContentFile(CSV_FILE)
     file.Upload()
+
     print(f"📤 Uploaded {CSV_FILE} to Google Drive!")
+    # Print the file details after upload to ensure it was successful
+    print(f"File uploaded with ID: {file['id']} and Title: {file['title']}")
+
 
 # Main function
 def main():
