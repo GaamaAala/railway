@@ -99,7 +99,9 @@ def main():
     else:
         print("No new data found.")
 
+import time
+
 if __name__ == "__main__":
     while True:
         main()
-        time.sleep(600)  # Fetch data every 30 seconds
+        time.sleep(600)  # Fetch data every 10 min
