@@ -54,7 +54,7 @@ def get_existing_periods():
     with open(CSV_FILE, "r") as file:
         return {line.split(",")[0] for line in file.readlines()[1:]}
 
-# Append new data to CSV
+# Prepend new data to CSV
 def write_to_csv(items):
     existing_periods = get_existing_periods()
     new_data = []
@@ -68,12 +68,24 @@ def write_to_csv(items):
             print(f"✅ New period added: {period}")
 
     if new_data:
-        file_exists = os.path.exists(CSV_FILE)
-        with open(CSV_FILE, "a", newline="") as file:
+        # Read existing CSV data
+        if os.path.exists(CSV_FILE):
+            with open(CSV_FILE, "r") as file:
+                existing_data = file.readlines()
+        else:
+            existing_data = []
+
+        # Write new data at the top
+        with open(CSV_FILE, "w", newline="") as file:
             writer = csv.writer(file)
-            if not file_exists:
+            # Write headers if file is empty
+            if not existing_data:
                 writer.writerow(CSV_HEADERS)
-            writer.writerows(new_data)
+            # Write the new data first, then the old data
+            for row in new_data:
+                writer.writerow(row)
+            for row in existing_data[1:]:  # Skip header
+                writer.writerow(row)
 
         # Upload only if new data is added
         upload_to_drive()
@@ -92,7 +104,6 @@ def upload_to_drive():
     print(f"📤 Uploaded {CSV_FILE} to Google Drive!")
     # Print the file details after upload to ensure it was successful
     print(f"File uploaded with ID: {file['id']} and Title: {file['title']}")
-
 
 # Main function
 def main():
