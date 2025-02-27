@@ -1,14 +1,6 @@
-# Use an official Python runtime as a parent image
-FROM python:3.12-slim
-
-# Set the working directory in the container
+FROM python:3.9  # Use at least Python 3.7 or higher
 WORKDIR /app
-
-# Copy the current directory contents into the container at /app
-COPY . /app
-
-# Install any needed packages specified in requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Run main.py when the container launches
+COPY . .
+RUN python -m venv venv
+RUN . venv/bin/activate && pip install -r requirements.txt
 CMD ["python", "main.py"]
