@@ -8,29 +8,31 @@ from pydrive2.auth import GoogleAuth
 from pydrive2.drive import GoogleDrive
 from oauth2client.service_account import ServiceAccountCredentials
 
-# Load Google Drive credentials from Railway environment variable
+# ✅ Load Google Drive credentials from Railway environment variable
 creds_json = os.getenv("GDRIVE_CREDENTIALS")
-if creds_json:
-    creds_path = "/tmp/credentials.json"
-    with open(creds_path, "w") as f:
-        f.write(creds_json)
+drive = None
 
-    # Authenticate with Google Drive using service account
-    scope = ["https://www.googleapis.com/auth/drive"]
-    creds = ServiceAccountCredentials.from_json_keyfile_name(creds_path, scope)
-    gauth = GoogleAuth()
-    gauth.credentials = creds
-    drive = GoogleDrive(gauth)
+if creds_json:
+    try:
+        creds_dict = json.loads(creds_json)  # ✅ Load credentials directly from env variable
+        scope = ["https://www.googleapis.com/auth/drive"]
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+        gauth = GoogleAuth()
+        gauth.credentials = creds
+        drive = GoogleDrive(gauth)
+        print("✅ Google Drive authentication successful!")
+    except Exception as e:
+        print(f"❌ Error loading Google Drive credentials: {e}")
 else:
     print("❌ Google Drive credentials not found!")
 
-# API details
+# ✅ API details
 URL = "https://imgametransit.com/api/webapi/GetNoaverageEmerdList"
 HEADERS = {"Content-Type": "application/json"}
 CSV_FILE = "data.csv"
 CSV_HEADERS = ["Period", "Number", "Premium"]
 
-# Fetch data
+# ✅ Fetch data
 def fetch_data():
     payload = {
         "pageSize": 10,
@@ -41,74 +43,85 @@ def fetch_data():
         "signature": "E3D7840D7D96C459DD2074174CD5A9A5",
         "timestamp": int(datetime.now().timestamp())
     }
-    response = requests.post(URL, headers=HEADERS, json=payload)
-    if response.status_code == 200:
-        data = response.json()
-        return data["data"]["list"] if "data" in data and "list" in data["data"] else None
+    try:
+        response = requests.post(URL, headers=HEADERS, json=payload)
+        if response.status_code == 200:
+            data = response.json()
+            return data["data"]["list"] if "data" in data and "list" in data["data"] else None
+    except Exception as e:
+        print(f"❌ Error fetching data: {e}")
     return None
 
-# Read existing periods
+# ✅ Read existing periods (prevent duplicates)
 def get_existing_periods():
     if not os.path.exists(CSV_FILE):
-        return set(), []
-    
-    with open(CSV_FILE, "r", newline="", encoding="utf-8") as file:
+        return set()
+    with open(CSV_FILE, "r", newline="") as file:
         reader = csv.reader(file)
-        next(reader, None)  # Skip header
-        data = list(reader)
-        periods = {row[0] for row in data}
-        return periods, data  # Return both existing periods and data
+        next(reader, None)  # Skip headers
+        return {row[0] for row in reader}
 
-# Append new data to CSV (adding at the top)
+# ✅ Prepend new data to CSV
 def write_to_csv(items):
-    existing_periods, existing_data = get_existing_periods()
+    existing_periods = get_existing_periods()
     new_data = []
 
     for item in items:
-        period = str(item["issueNumber"])  # Ensure period is a string (prevent scientific notation)
-        number = item["number"]
-        premium = item["premium"]
+        period = str(item["issueNumber"])  # Ensure period is a string
+        number = str(item["number"])
+        premium = str(item["premium"])
         if period not in existing_periods:
             new_data.append([period, number, premium])
             print(f"✅ New period added: {period}")
 
     if new_data:
-        # Combine new data on top of existing data
-        all_data = [CSV_HEADERS] + new_data + existing_data
+        # ✅ Read existing CSV data (without adding extra commas)
+        existing_data = []
+        if os.path.exists(CSV_FILE):
+            with open(CSV_FILE, "r", newline="") as file:
+                reader = csv.reader(file)
+                existing_data = list(reader)
 
-        # Write data back to file, ensuring correct format
-        with open(CSV_FILE, "w", newline="", encoding="utf-8") as file:
+        # ✅ Write new data at the top without corrupting CSV structure
+        with open(CSV_FILE, "w", newline="") as file:
             writer = csv.writer(file)
-            writer.writerows(all_data)
+            writer.writerow(CSV_HEADERS)  # Always keep header
+            writer.writerows(new_data)  # Write new data first
+            writer.writerows(existing_data[1:])  # Append old data (skip duplicate header)
 
-        # Upload only if new data is added
+        # ✅ Upload to Google Drive if new data is added
         upload_to_drive()
 
-# Upload CSV to Google Drive
+# ✅ Upload CSV to Google Drive
 def upload_to_drive():
-    file_list = drive.ListFile({'q': f"title='{CSV_FILE}' and trashed=false"}).GetList()
-    if file_list:
-        file_id = file_list[0]['id']
-        file = drive.CreateFile({'id': file_id})
-    else:
-        file = drive.CreateFile({'title': CSV_FILE})
-    file.SetContentFile(CSV_FILE)
-    file.Upload()
+    if drive is None:
+        print("❌ Google Drive not authenticated. Skipping upload.")
+        return
 
-    print(f"📤 Uploaded {CSV_FILE} to Google Drive!")
-    # Print the file details after upload to ensure it was successful
-    print(f"File uploaded with ID: {file['id']} and Title: {file['title']}")
+    try:
+        file_list = drive.ListFile({'q': f"title='{CSV_FILE}' and trashed=false"}).GetList()
+        if file_list:
+            file_id = file_list[0]['id']
+            file = drive.CreateFile({'id': file_id})
+        else:
+            file = drive.CreateFile({'title': CSV_FILE})
 
-# Main function
+        file.SetContentFile(CSV_FILE)
+        file.Upload()
+        print(f"📤 Uploaded {CSV_FILE} to Google Drive! ✅")
+    except Exception as e:
+        print(f"❌ Error uploading to Google Drive: {e}")
+
+# ✅ Main function
 def main():
-    print("Fetching data...")
+    print("🔄 Fetching data...")
     data = fetch_data()
     if data:
         write_to_csv(data)
     else:
-        print("No new data found.")
+        print("⚠️ No new data found.")
 
 if __name__ == "__main__":
     while True:
         main()
-        time.sleep(600)  # Fetch data every 10 min
+        time.sleep(600)  # Fetch data every 10 minutes
