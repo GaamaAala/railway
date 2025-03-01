@@ -21,6 +21,8 @@ if creds_json:
         gauth.credentials = creds
         drive = GoogleDrive(gauth)
         print("✅ Google Drive authentication successful!")
+    except json.JSONDecodeError:
+        print("❌ Error: Google Drive credentials are not in valid JSON format.")
     except Exception as e:
         print(f"❌ Error loading Google Drive credentials: {e}")
 else:
@@ -45,21 +47,27 @@ def fetch_data():
     }
     try:
         response = requests.post(URL, headers=HEADERS, json=payload)
-        if response.status_code == 200:
-            data = response.json()
-            return data["data"]["list"] if "data" in data and "list" in data["data"] else None
-    except Exception as e:
-        print(f"❌ Error fetching data: {e}")
+        response.raise_for_status()  # ✅ Raises an error for HTTP errors
+        data = response.json()
+        return data.get("data", {}).get("list", None)
+    except requests.RequestException as e:
+        print(f"❌ Error fetching data from API: {e}")
+    except json.JSONDecodeError:
+        print("❌ Error: Received invalid JSON response from API.")
     return None
 
 # ✅ Read existing periods (prevent duplicates)
 def get_existing_periods():
     if not os.path.exists(CSV_FILE):
         return set()
-    with open(CSV_FILE, "r", newline="") as file:
-        reader = csv.reader(file)
-        next(reader, None)  # Skip headers
-        return {row[0] for row in reader}
+    try:
+        with open(CSV_FILE, "r", newline="") as file:
+            reader = csv.reader(file)
+            next(reader, None)  # Skip headers
+            return {row[0] for row in reader if row}
+    except Exception as e:
+        print(f"❌ Error reading CSV file: {e}")
+        return set()
 
 # ✅ Prepend new data to CSV
 def write_to_csv(items):
@@ -67,30 +75,33 @@ def write_to_csv(items):
     new_data = []
 
     for item in items:
-        period = str(item["issueNumber"])  # Ensure period is a string
-        number = str(item["number"])
-        premium = str(item["premium"])
-        if period not in existing_periods:
+        period = str(item.get("issueNumber", ""))
+        number = str(item.get("number", ""))
+        premium = str(item.get("premium", ""))
+        if period and period not in existing_periods:
             new_data.append([period, number, premium])
             print(f"✅ New period added: {period}")
 
     if new_data:
-        # ✅ Read existing CSV data (without adding extra commas)
-        existing_data = []
-        if os.path.exists(CSV_FILE):
-            with open(CSV_FILE, "r", newline="") as file:
-                reader = csv.reader(file)
-                existing_data = list(reader)
+        try:
+            # ✅ Read existing CSV data safely
+            existing_data = []
+            if os.path.exists(CSV_FILE):
+                with open(CSV_FILE, "r", newline="") as file:
+                    reader = csv.reader(file)
+                    existing_data = list(reader)
 
-        # ✅ Write new data at the top without corrupting CSV structure
-        with open(CSV_FILE, "w", newline="") as file:
-            writer = csv.writer(file)
-            writer.writerow(CSV_HEADERS)  # Always keep header
-            writer.writerows(new_data)  # Write new data first
-            writer.writerows(existing_data[1:])  # Append old data (skip duplicate header)
+            # ✅ Write new data at the top while keeping structure intact
+            with open(CSV_FILE, "w", newline="") as file:
+                writer = csv.writer(file)
+                writer.writerow(CSV_HEADERS)  # Always keep header
+                writer.writerows(new_data)  # Write new data first
+                writer.writerows(existing_data[1:])  # Append old data (skip duplicate header)
 
-        # ✅ Upload to Google Drive if new data is added
-        upload_to_drive()
+            # ✅ Upload to Google Drive if new data is added
+            upload_to_drive()
+        except Exception as e:
+            print(f"❌ Error writing to CSV file: {e}")
 
 # ✅ Upload CSV to Google Drive
 def upload_to_drive():
