@@ -43,7 +43,7 @@ authenticate_drive()
 URL = "https://imgametransit.com/api/webapi/GetNoaverageEmerdList"
 HEADERS = {"Content-Type": "application/json"}
 CSV_FILE = "data.csv"
-CSV_HEADERS = ["Period", "Number", "Premium"]
+CSV_HEADERS = ["Period", "Number", "Premium", "Big/Small"]
 
 # ✅ Fetch data
 def fetch_data():
@@ -83,8 +83,12 @@ def write_to_csv(items):
         period = str(item["issueNumber"])  # Ensure period is a string
         number = str(item["number"])
         premium = str(item["premium"])
+
+        # ✅ Assign "B" for numbers 5-9 and "S" for numbers 0-4
+        big_small = "B" if int(number) >= 5 else "S"
+
         if period not in existing_periods:
-            new_data.append([period, number, premium])
+            new_data.append([period, number, premium, big_small])
             print(f"✅ New period added: {period}")
 
     if new_data:
@@ -150,4 +154,4 @@ def main():
 if __name__ == "__main__":
     while True:
         main()
-        time.sleep(600)  # Fetch data every 10 minutes
+        time.sleep(540)  # Fetch data every 10 minutes
