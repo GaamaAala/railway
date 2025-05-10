@@ -45,6 +45,22 @@ HEADERS = {"Content-Type": "application/json"}
 CSV_FILE = "data.csv"
 CSV_HEADERS = ["Period", "Number", "Premium", "Big/Small"]
 
+# ✅ Trim the CSV file if it exceeds 8000 lines
+def trim_csv_if_too_large(max_lines=8000):
+    """Clear CSV if it exceeds a certain number of lines."""
+    if not os.path.exists(CSV_FILE):
+        return  # File doesn't exist yet, nothing to trim
+
+    with open(CSV_FILE, "r", newline="") as file:
+        lines = file.readlines()
+
+    if len(lines) >= max_lines:
+        with open(CSV_FILE, "w", newline="") as file:
+            writer = csv.writer(file)
+            writer.writerow(CSV_HEADERS)  # Just write the header back
+        print(f"🧹 CSV had {len(lines)} lines — trimmed to header only.")
+        upload_to_drive()
+
 # ✅ Fetch data
 def fetch_data():
     payload = {
@@ -145,6 +161,10 @@ def upload_to_drive():
 # ✅ Main function
 def main():
     print("🔄 Fetching data...")
+
+    # ✅ Trim the file if it's too large before writing new data
+    trim_csv_if_too_large()
+
     data = fetch_data()
     if data:
         write_to_csv(data)
